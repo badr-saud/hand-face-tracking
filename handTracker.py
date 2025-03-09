@@ -1,9 +1,9 @@
 import math
 import time
-
 import cv2
 import mediapipe as mp
-import pulsectl
+from ctypes import cast, POINTER
+from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 
 
 class HandTracker:
@@ -56,6 +56,12 @@ def main():
 
     tracker = HandTracker()
 
+    # Setup pycaw for volume control
+    devices = AudioUtilities.GetSpeakers()
+    interface = devices.Activate(
+        IAudioEndpointVolume._iid_, 1, None)
+    volume = cast(interface, POINTER(IAudioEndpointVolume))
+
     while True:
         success, img = capture.read()
 
@@ -66,17 +72,16 @@ def main():
         img, _ = tracker.process_frame(img)
         lmlist = tracker.get_positions(img)
 
-
         if len(lmlist) != 0:
-            with pulsectl.Pulse('volume-control') as pulse:
-                sink = pulse.sink_list()[0]  # default audio sink
+            # Calculate distance between thumb and index finger
+            distance = tracker.distance(lmlist, 4, 8)
 
-                volume = min(tracker.distance(lmlist, 4,8) / 250, 1)  
-                print(tracker.distance(lmlist, 4, 8))
-                print(sink.volume.value_flat)
-                pulse.volume_set_all_chans(sink,volume)
+            # Normalize the distance for volume control (max distance is arbitrary, adjust if needed)
+            volume_level = min(distance / 250, 1)  # Normalize the value between 0 and 1
+            print(f"Distance: {distance}, Volume Level: {volume_level}")
 
-
+            # Set the system volume
+            volume.SetMasterVolumeLevelScalar(volume_level, None)
 
         fps = tracker.get_fps()
 
